@@ -2,6 +2,8 @@
 
 Library for PGP encrypting files added to an S3 bucket.
 
+Can be deployed to AWS Lambda with [s3-pgp-encryptor-lambda-deployer](https://github.com/Jaza/s3-pgp-encryptor-lambda-deployer).
+
 ## Getting started
 
 To work locally with this project, follow the steps below:

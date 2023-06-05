@@ -2,7 +2,7 @@
   "name": "s3-pgp-encryptor-lib",
   "version": "0.1.0",
   "description": "Lambda function that encrypts files uploaded to S3.",
-  "main": "dist/app.js",
+  "main": "dist/lib.js",
   "scripts": {
     "build-ts": "tsc",
     "encrypt-it": "ts-node encryptIt.ts",

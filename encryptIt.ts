@@ -20,8 +20,7 @@ const run = async () => {
       logger
     );
   } catch (err) {
-    logger.error(err, { err });
-    return;
+    logger.error(err, err);
   }
 };
 

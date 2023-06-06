@@ -1,11 +1,10 @@
-import { Buffer } from "buffer";
-import { Readable } from "stream";
+import { PassThrough, Readable } from "stream";
 import {
   S3Client,
   GetObjectCommand,
-  PutObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -100,7 +99,7 @@ const _getUnencryptedData = async (
   s3BucketName: string,
   s3ObjectKeySanitized: string,
   logger: Logger
-): Promise<Uint8Array> => {
+): Promise<Readable> => {
   const s3Client = new S3Client({ region: s3Region });
 
   const getObjectCommand = new GetObjectCommand({
@@ -109,15 +108,8 @@ const _getUnencryptedData = async (
   });
 
   const getObjectResp = await s3Client.send(getObjectCommand);
-
-  const unencryptedData = new Uint8Array(
-    await streamToBuffer(getObjectResp.Body as Readable)
-  );
-
-  logger.info(
-    `Read unencrypted data of size ${humanFileSize(unencryptedData.length)} ` +
-      `from ${s3ObjectKeySanitized}`
-  );
+  const unencryptedData = getObjectResp.Body as Readable;
+  logger.info(`Read head of unencrypted data from ${s3ObjectKeySanitized}`);
 
   return unencryptedData;
 };
@@ -129,23 +121,35 @@ const _saveEncryptedData = async (
   s3Region: string,
   s3BucketName: string,
   s3ObjectKeyEncrypted: string,
-  encryptedData: Uint8Array,
+  encryptedData: Readable,
   logger: Logger
 ) => {
   const s3Client = new S3Client({ region: s3Region });
+  const passThrough = new PassThrough();
+  encryptedData.pipe(passThrough);
 
-  const putObjectCommand = new PutObjectCommand({
-    Bucket: s3BucketName,
-    Key: s3ObjectKeyEncrypted,
-    Body: Buffer.from(encryptedData),
+  const s3Upload = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: s3BucketName,
+      Key: s3ObjectKeyEncrypted,
+      Body: passThrough,
+    },
   });
 
-  await s3Client.send(putObjectCommand);
+  s3Upload.on("httpUploadProgress", (progress) => {
+    logger.info(
+      `Saving encrypted data to ${progress.Key}, ` +
+        `loaded: ${
+          progress.loaded ? humanFileSize(progress.loaded) : "unknown"
+        }, ` +
+        `total: ${progress.total ? humanFileSize(progress.total) : "unknown"}`
+    );
+  });
 
-  logger.info(
-    `Saved encrypted data of size ${humanFileSize(encryptedData.length)} to ` +
-      `${s3ObjectKeyEncrypted}`
-  );
+  await s3Upload.done();
+
+  logger.info(`Saved encrypted data to ${s3ObjectKeyEncrypted}`);
 };
 
 /**
@@ -237,7 +241,7 @@ const pgpEncryptS3Object = async (
     message: await createMessage({ binary: unencryptedData }),
     encryptionKeys: publicKey,
     format: "binary",
-  })) as Uint8Array;
+  })) as Readable;
 
   await _saveEncryptedData(
     s3Region,
